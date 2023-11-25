@@ -13,7 +13,7 @@ pub struct Renderer {
 impl Renderer {
     pub fn new() -> Self {
         let font = Font::from_bytes(
-            include_bytes!("../resources/Poppins-Regular.ttf") as &[u8],
+            include_bytes!("../resources/WorkSans-Light.ttf") as &[u8],
             FontSettings::default()).unwrap();
         Self {
             font,
@@ -77,7 +77,7 @@ impl Renderer {
     pub fn draw_text(&mut self, gfx: &mut Graphics, text: &str, size: f32, x: f32, y: f32,
                      color: &Color) {
         let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
-        layout.append(&[&self.font], &TextStyle::new(text, size, 0));
+        layout.append(&[&self.font], &TextStyle::new(text, size * gfx.scale, 0));
         for glyph in layout.glyphs() {
             if !self.font_atlas.contains_key(&glyph.key) {
                 let (metrics, bitmap) = self.font.rasterize(glyph.parent, size * gfx.scale);
@@ -95,22 +95,25 @@ impl Renderer {
             let color_v = [color.r, color.g, color.b, color.a];
             let vertices = [
                 Vertex {
-                    pos: [x + glyph.x, y + glyph.y],
+                    pos: [x + glyph.x/gfx.scale, y + glyph.y/gfx.scale],
                     uv: [uv_rect.x1, uv_rect.y1],
                     color: color_v
                 },
                 Vertex {
-                    pos: [x + glyph.x, y + glyph.y + glyph.height as f32],
+                    pos: [x + glyph.x/gfx.scale, y + (glyph.y+glyph.height as f32)/gfx.scale],
                     uv: [uv_rect.x1, uv_rect.y2],
                     color: color_v
                 },
                 Vertex {
-                    pos: [x + glyph.x + glyph.width as f32, y + glyph.y + glyph.height as f32],
+                    pos: [
+                        x + (glyph.x+glyph.width as f32)/gfx.scale,
+                        y + (glyph.y+glyph.height as f32)/gfx.scale,
+                    ],
                     uv: [uv_rect.x2, uv_rect.y2],
                     color: color_v
                 },
                 Vertex {
-                    pos: [x + glyph.x + glyph.width as f32, y + glyph.y],
+                    pos: [x + (glyph.x+glyph.width as f32)/gfx.scale, y + glyph.y/gfx.scale],
                     uv: [uv_rect.x2, uv_rect.y1],
                     color: color_v
                 },

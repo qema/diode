@@ -11,8 +11,9 @@ pub trait App {
     fn update(&mut self, ctx: &mut Context);
 }
 
-async fn run_async(
-    event_loop: EventLoop<()>, window: &Window, handler: &mut impl App) {
+async fn run_async<F>(
+    event_loop: EventLoop<()>, window: &Window, mut update_fn: F)
+    where F: FnMut(&mut Context) {
     let mut size = window.inner_size();
     size.width = size.width.max(1);
     size.height = size.height.max(1);
@@ -67,7 +68,7 @@ async fn run_async(
                     let frame = surface.get_current_texture().unwrap();
                     let view = frame.texture.create_view(
                         &wgpu::TextureViewDescriptor::default());
-                    handler.update(&mut ctx);
+                    update_fn(&mut ctx);
 
                     ctx.gfx.commit_geom();
                     ctx.gfx.render(&view);
@@ -80,8 +81,8 @@ async fn run_async(
     }).unwrap();
 }
 
-pub fn run(handler: &mut impl App) {
+pub fn run<F>(update_fn: F) where F: FnMut(&mut Context) {
     let event_loop = EventLoop::new().unwrap();
     let window = Window::new(&event_loop).unwrap();
-    pollster::block_on(run_async(event_loop, &window, handler));
+    pollster::block_on(run_async(event_loop, &window, update_fn));
 }

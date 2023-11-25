@@ -1,14 +1,10 @@
-use diode::context::*;
 use diode::graphics::*;
 use diode::app::*;
 use lyon::path::Path;
-use lyon::math::{point, Point};
+use lyon::math::point;
 
-struct TestApp {
-}
-
-impl App for TestApp {
-    fn update(&mut self, ctx: &mut Context) {
+fn main() {
+    run(move |ctx| {
         ctx.renderer.fill_rect(&mut ctx.gfx,
                                50.0, 70.0, 200.0, 300.0,
                                &Color::rgba(1.0, 0.0, 0.0, 0.5));
@@ -34,10 +30,9 @@ impl App for TestApp {
         builder.close();
         let path = builder.build();
         ctx.renderer.stroke_path(&mut ctx.gfx, path, &Color::rgba(0.0, 0.0, 0.0, 1.0));
-    }
-}
 
-fn main() {
-    let mut app = TestApp {};
-    run(&mut app);
+        ctx.renderer.draw_text(&mut ctx.gfx, "the quick brown fox jumps over the lazy dog",
+                               12.0, 100.0, 500.0,
+                               &Color::rgb(1.0, 1.0, 1.0));
+    });
 }
