@@ -2,6 +2,8 @@ use crate::graphics::*;
 use std::collections::HashMap;
 use fontdue::{Font, FontSettings};
 use fontdue::layout::{Layout, CoordinateSystem, TextStyle, GlyphRasterConfig};
+use lyon::path::Path;
+use lyon::tessellation::*;
 
 pub struct Renderer {
     font: Font,
@@ -19,8 +21,61 @@ impl Renderer {
         }
     }
 
+    pub fn stroke_path(&mut self, gfx: &mut Graphics, path: Path, color: &Color) {
+        let mut geometry: VertexBuffers<Vertex, u16> = VertexBuffers::new();
+        let mut tessellator = StrokeTessellator::new();
+        let color_v = [color.r, color.g, color.b, color.a];
+        {
+            tessellator.tessellate_path(
+                &path,
+                &StrokeOptions::default(),
+                &mut BuffersBuilder::new(&mut geometry, |vertex: StrokeVertex| {
+                    Vertex {
+                        pos: vertex.position().to_array(),
+                        uv: [0.0, 0.0],
+                        color: color_v,
+                    }
+                }),
+            ).unwrap();
+        }
+        gfx.add_geom(&geometry.vertices, &geometry.indices);
+    }
+
+    pub fn fill_path(&mut self, gfx: &mut Graphics, path: Path, color: &Color) {
+        let mut geometry: VertexBuffers<Vertex, u16> = VertexBuffers::new();
+        let mut tessellator = FillTessellator::new();
+        let color_v = [color.r, color.g, color.b, color.a];
+        {
+            tessellator.tessellate_path(
+                &path,
+                &FillOptions::default(),
+                &mut BuffersBuilder::new(&mut geometry, |vertex: FillVertex| {
+                    Vertex {
+                        pos: vertex.position().to_array(),
+                        uv: [0.0, 0.0],
+                        color: color_v,
+                    }
+                }),
+            ).unwrap();
+        }
+        gfx.add_geom(&geometry.vertices, &geometry.indices);
+    }
+
+    pub fn fill_rect(&mut self, gfx: &mut Graphics, x1: f32, y1: f32, x2: f32, y2: f32,
+                     color: &Color) {
+        let color_v = [color.r, color.g, color.b, color.a];
+        let vertices = [
+            Vertex { pos: [x1, y1], uv: [0.0, 0.0], color: color_v },
+            Vertex { pos: [x1, y2], uv: [0.0, 0.0], color: color_v },
+            Vertex { pos: [x2, y2], uv: [0.0, 0.0], color: color_v },
+            Vertex { pos: [x2, y1], uv: [0.0, 0.0], color: color_v },
+        ];
+        let indices = [0u16, 1, 2, 0, 2, 3];
+        gfx.add_geom(&vertices, &indices);
+    }
+
     pub fn draw_text(&mut self, gfx: &mut Graphics, text: &str, size: f32, x: f32, y: f32,
-                     color: Color) {
+                     color: &Color) {
         let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
         layout.append(&[&self.font], &TextStyle::new(text, size, 0));
         for glyph in layout.glyphs() {

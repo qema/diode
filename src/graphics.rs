@@ -17,12 +17,26 @@ pub struct Rect {
     pub x2: f32,
     pub y2: f32,
 }
+impl Rect {
+    pub fn new(x1: f32, y1: f32, x2: f32, y2: f32) -> Self {
+        Self { x1, y1, x2, y2 }
+    }
+}
 
+#[derive(Debug)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
     pub b: f32,
     pub a: f32,
+}
+impl Color {
+    pub fn rgb(r: f32, g: f32, b: f32) -> Self {
+        Self { r, g, b, a: 1.0 }
+    }
+    pub fn rgba(r: f32, g: f32, b: f32, a: f32) -> Self {
+        Self { r, g, b, a }
+    }
 }
 
 pub struct Graphics {
