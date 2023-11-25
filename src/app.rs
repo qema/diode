@@ -1,3 +1,5 @@
+use crate::context::*;
+use crate::renderer::*;
 use crate::graphics::*;
 use winit::{
     event::{Event, WindowEvent},
@@ -5,7 +7,12 @@ use winit::{
     window::Window,
 };
 
-async fn run_async(event_loop: EventLoop<()>, window: &Window) {
+pub trait App {
+    fn update(&mut self, ctx: &mut Context);
+}
+
+async fn run_async(
+    event_loop: EventLoop<()>, window: &Window, handler: &mut impl App) {
     let mut size = window.inner_size();
     size.width = size.width.max(1);
     size.height = size.height.max(1);
@@ -23,7 +30,7 @@ async fn run_async(event_loop: EventLoop<()>, window: &Window) {
     let swapchain_capabilities = surface.get_capabilities(&adapter);
     let swapchain_format = swapchain_capabilities.formats[0];
 
-    let mut config = wgpu::SurfaceConfiguration {
+    let config = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format: swapchain_format,
         width: size.width,
@@ -35,52 +42,34 @@ async fn run_async(event_loop: EventLoop<()>, window: &Window) {
 
     surface.configure(&device, &config);
 
-    let mut graphics = Graphics::init(&config, &device, &queue);
-    graphics.resize(
-        config.width as f32 / window.scale_factor() as f32,
-        config.height as f32 / window.scale_factor() as f32,
-        &device, &queue);
+    let mut ctx = Context {
+        gfx: Graphics::init(config, device, queue),
+        renderer: Renderer::new(),
+    };
+    ctx.gfx.resize(ctx.gfx.config.width, ctx.gfx.config.height,
+                   window.scale_factor() as f32);
 
     // add blank texture
-    graphics.add_texture(&[0xff; 4], 1, 1, &queue);
+    ctx.gfx.add_texture(&[0xff; 4], 1, 1);
 
     event_loop.run(move |event, target| {
         let _ = (&instance, &adapter);
         if let Event::WindowEvent { window_id: _, event } = event {
             match event {
                 WindowEvent::Resized(new_size) => {
-                    config.width = new_size.width.max(1);
-                    config.height = new_size.height.max(1);
-                    surface.configure(&device, &config);
-                    graphics.resize(
-                        config.width as f32 / window.scale_factor() as f32,
-                        config.height as f32 / window.scale_factor() as f32,
-                        &device, &queue);
+                    ctx.gfx.resize(new_size.width, new_size.height,
+                                   window.scale_factor() as f32);
+                    surface.configure(&ctx.gfx.device, &ctx.gfx.config);
+        
                     window.request_redraw();
                 }
                 WindowEvent::RedrawRequested => {
                     let frame = surface.get_current_texture().unwrap();
                     let view = frame.texture.create_view(
                         &wgpu::TextureViewDescriptor::default());
-                    let vertices = [
-                        Vertex{pos: [50., 50.], color: [1.,1.,1.,1.], uv: [0.,0.]},
-                        Vertex{pos: [200., 50.], color: [1.,0.,1.,1.], uv: [0.,0.]},
-                        Vertex{pos: [220., 300.], color: [0.,1.,1.,1.], uv: [0.,0.]},
-                    ];
-                    let indices = [0, 1, 2];
-                    graphics.add_geom(&vertices, &indices);
-                    for i in 0..100 {
-                        let vertices = [
-                            Vertex{pos: [400.+i as f32, 400.],
-                                color: [1.,0.,0.,1.], uv: [0.,0.]},
-                            Vertex{pos: [500., 400.], color: [0.,1.,0.,1.], uv: [0.,0.]},
-                            Vertex{pos: [500., 500.], color: [0.,0.,1.,1.], uv: [0.,0.]},
-                        ];
-                        let indices = [0, 1, 2];
-                        graphics.add_geom(&vertices, &indices);
-                    }
-                    graphics.commit_geom(&queue);
-                    graphics.render(&view, &device, &queue);
+                    handler.update(&mut ctx);
+                    ctx.gfx.commit_geom();
+                    ctx.gfx.render(&view);
                     frame.present();
                 }
                 WindowEvent::CloseRequested => target.exit(),
@@ -90,8 +79,8 @@ async fn run_async(event_loop: EventLoop<()>, window: &Window) {
     }).unwrap();
 }
 
-pub fn run() {
+pub fn run(handler: &mut impl App) {
     let event_loop = EventLoop::new().unwrap();
     let window = Window::new(&event_loop).unwrap();
-    pollster::block_on(run_async(event_loop, &window));
+    pollster::block_on(run_async(event_loop, &window, handler));
 }

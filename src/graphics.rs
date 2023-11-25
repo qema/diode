@@ -10,6 +10,7 @@ pub struct Vertex {
     pub color: [f32; 4],
 }
 
+#[derive(Debug)]
 pub struct Rect {
     pub x1: f32,
     pub y1: f32,
@@ -18,11 +19,15 @@ pub struct Rect {
 }
 
 pub struct Graphics {
-    width: f32,
-    height: f32,
+    pub width: f32,
+    pub height: f32,
+    pub scale: f32,
     vertices: Vec<Vertex>,
     indices: Vec<u16>,
     n_committed_indices: u32,
+    pub config: wgpu::SurfaceConfiguration,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
     vertex_buf: wgpu::Buffer,
     index_buf: wgpu::Buffer,
     uniform_buf: wgpu::Buffer,
@@ -39,8 +44,8 @@ const MAX_N_INDICES: usize = 100000;
 const TEXTURE_SIZE: u32 = 1000;
 
 impl Graphics {
-    pub fn init(config: &wgpu::SurfaceConfiguration,
-                device: &wgpu::Device, _queue: &wgpu::Queue) -> Self {
+    pub fn init(config: wgpu::SurfaceConfiguration,
+                device: wgpu::Device, queue: wgpu::Queue) -> Self {
         let vertices = [Vertex {
             pos: [0.0, 0.0],
             uv: [0.0, 0.0],
@@ -143,7 +148,18 @@ impl Graphics {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
-                targets: &[Some(config.view_formats[0].into())],
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.view_formats[0].into(),
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add
+                        },
+                        alpha: wgpu::BlendComponent::OVER,
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })]
             }),
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
@@ -191,9 +207,13 @@ impl Graphics {
         Self {
             width: 0.0,
             height: 0.0,
+            scale: 0.0,
             indices: vec![],
             vertices: vec![],
             n_committed_indices: 0,
+            config,
+            device,
+            queue,
             vertex_buf,
             index_buf,
             uniform_buf,
@@ -206,35 +226,39 @@ impl Graphics {
         }
     }
 
-    pub fn resize(&mut self, width: f32, height: f32, _device: &wgpu::Device,
-                  queue: &wgpu::Queue) {
-        self.width = width;
-        self.height = height;
+    pub fn resize(&mut self, width: u32, height: u32, scale: f32) {
+        let width = width.max(1);
+        let height = height.max(1);
+        self.width = width as f32 / scale;
+        self.height = height as f32 / scale;
+        self.scale = scale;
+        self.config.width = width;
+        self.config.height = height;
         let size = [self.width, self.height];
-        queue.write_buffer(&self.uniform_buf, 0, bytemuck::cast_slice(&size));
+        self.queue.write_buffer(&self.uniform_buf, 0, bytemuck::cast_slice(&size));
     }
 
     pub fn add_geom(&mut self, vertices: &[Vertex], indices: &[u16]) {
-        self.vertices.append(&mut vertices.to_vec());
         self.indices.append(&mut indices.iter().map(|&idx| {
-            idx + self.indices.len() as u16
+            idx + self.vertices.len() as u16
         }).collect::<Vec<_>>().to_vec());
+        self.vertices.append(&mut vertices.to_vec());
         self.n_committed_indices = self.indices.len() as u32;
     }
 
-    pub fn commit_geom(&mut self, queue: &wgpu::Queue) {
-        queue.write_buffer(&self.vertex_buf, 0, bytemuck::cast_slice(&self.vertices));
+    pub fn commit_geom(&mut self) {
+        self.queue.write_buffer(&self.vertex_buf, 0, bytemuck::cast_slice(&self.vertices));
         // wgpu: indices len must be multiple of 2
         if self.indices.len() % 2 == 1 {
             self.indices.push(0);
         }
-        queue.write_buffer(&self.index_buf, 0, bytemuck::cast_slice(&self.indices));
+        self.queue.write_buffer(&self.index_buf, 0, bytemuck::cast_slice(&self.indices));
         self.vertices.clear();
         self.indices.clear();
     }
 
     pub fn add_texture(&mut self, data: &[u8], width: u32, height: u32,
-                       queue: &wgpu::Queue) -> Rect {
+                       ) -> Rect {
         if self.texture_cur_x + width >= TEXTURE_SIZE {
             self.texture_cur_x = 0;
             self.texture_cur_y += self.texture_cur_max_height;
@@ -249,7 +273,7 @@ impl Graphics {
         self.texture_cur_x += width;
         self.texture_cur_max_height = self.texture_cur_max_height.max(height);
 
-        queue.write_texture(wgpu::ImageCopyTexture {
+        self.queue.write_texture(wgpu::ImageCopyTexture {
             texture: &self.texture,
             mip_level: 0,
             origin: wgpu::Origin3d {
@@ -275,9 +299,8 @@ impl Graphics {
         }
     }
 
-    pub fn render(&mut self, view: &wgpu::TextureView, device: &wgpu::Device,
-                  queue: &wgpu::Queue) {
-        let mut encoder = device.create_command_encoder(
+    pub fn render(&mut self, view: &wgpu::TextureView) {
+        let mut encoder = self.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor { label: None });
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -304,6 +327,6 @@ impl Graphics {
                 rpass.draw_indexed(0..self.n_committed_indices, 0, 0..1);
             }
         }
-        queue.submit(Some(encoder.finish()));
+        self.queue.submit(Some(encoder.finish()));
     }
 }
