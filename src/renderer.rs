@@ -19,7 +19,8 @@ impl Renderer {
         }
     }
 
-    pub fn draw_text(&mut self, gfx: &mut Graphics, text: &str, size: f32, x: f32, y: f32) {
+    pub fn draw_text(&mut self, gfx: &mut Graphics, text: &str, size: f32, x: f32, y: f32,
+                     color: Color) {
         let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
         layout.append(&[&self.font], &TextStyle::new(text, size, 0));
         for glyph in layout.glyphs() {
@@ -36,26 +37,27 @@ impl Renderer {
                 self.font_atlas.insert(glyph.key, rect);
             }
             let uv_rect = &self.font_atlas[&glyph.key];
+            let color_v = [color.r, color.g, color.b, color.a];
             let vertices = [
                 Vertex {
                     pos: [x + glyph.x, y + glyph.y],
                     uv: [uv_rect.x1, uv_rect.y1],
-                    color: [1.0, 1.0, 1.0, 1.0]
+                    color: color_v
                 },
                 Vertex {
                     pos: [x + glyph.x, y + glyph.y + glyph.height as f32],
                     uv: [uv_rect.x1, uv_rect.y2],
-                    color: [1.0, 1.0, 1.0, 1.0]
+                    color: color_v
                 },
                 Vertex {
                     pos: [x + glyph.x + glyph.width as f32, y + glyph.y + glyph.height as f32],
                     uv: [uv_rect.x2, uv_rect.y2],
-                    color: [1.0, 1.0, 1.0, 1.0]
+                    color: color_v
                 },
                 Vertex {
                     pos: [x + glyph.x + glyph.width as f32, y + glyph.y],
                     uv: [uv_rect.x2, uv_rect.y1],
-                    color: [1.0, 1.0, 1.0, 1.0]
+                    color: color_v
                 },
             ];
             let indices = [0u16, 1, 2, 0, 2, 3];

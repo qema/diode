@@ -18,6 +18,13 @@ pub struct Rect {
     pub y2: f32,
 }
 
+pub struct Color {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
+}
+
 pub struct Graphics {
     pub width: f32,
     pub height: f32,

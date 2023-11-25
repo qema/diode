@@ -68,6 +68,7 @@ async fn run_async(
                     let view = frame.texture.create_view(
                         &wgpu::TextureViewDescriptor::default());
                     handler.update(&mut ctx);
+
                     ctx.gfx.commit_geom();
                     ctx.gfx.render(&view);
                     frame.present();
