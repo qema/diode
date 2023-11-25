@@ -30,6 +30,6 @@ var samp: sampler;
 
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
-    //return textureSample(tex, samp, vertex.uv) * vertex.color;
-    return vertex.color;
+    return textureSample(tex, samp, vertex.uv) * vertex.color;
+    //return vertex.color;
 }

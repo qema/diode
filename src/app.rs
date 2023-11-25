@@ -41,6 +41,9 @@ async fn run_async(event_loop: EventLoop<()>, window: &Window) {
         config.height as f32 / window.scale_factor() as f32,
         &device, &queue);
 
+    // add blank texture
+    graphics.add_texture(&[0xff; 4], 1, 1, &queue);
+
     event_loop.run(move |event, target| {
         let _ = (&instance, &adapter);
         if let Event::WindowEvent { window_id: _, event } = event {
@@ -65,7 +68,18 @@ async fn run_async(event_loop: EventLoop<()>, window: &Window) {
                         Vertex{pos: [220., 300.], color: [0.,1.,1.,1.], uv: [0.,0.]},
                     ];
                     let indices = [0, 1, 2];
-                    graphics.geometry(&queue, &vertices, &indices);
+                    graphics.add_geom(&vertices, &indices);
+                    for i in 0..100 {
+                        let vertices = [
+                            Vertex{pos: [400.+i as f32, 400.],
+                                color: [1.,0.,0.,1.], uv: [0.,0.]},
+                            Vertex{pos: [500., 400.], color: [0.,1.,0.,1.], uv: [0.,0.]},
+                            Vertex{pos: [500., 500.], color: [0.,0.,1.,1.], uv: [0.,0.]},
+                        ];
+                        let indices = [0, 1, 2];
+                        graphics.add_geom(&vertices, &indices);
+                    }
+                    graphics.commit_geom(&queue);
                     graphics.render(&view, &device, &queue);
                     frame.present();
                 }

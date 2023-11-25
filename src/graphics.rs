@@ -10,18 +10,28 @@ pub struct Vertex {
     pub color: [f32; 4],
 }
 
+pub struct Rect {
+    pub x1: f32,
+    pub y1: f32,
+    pub x2: f32,
+    pub y2: f32,
+}
+
 pub struct Graphics {
     width: f32,
     height: f32,
-    n_indices: u32,
+    vertices: Vec<Vertex>,
+    indices: Vec<u16>,
+    n_committed_indices: u32,
     vertex_buf: wgpu::Buffer,
     index_buf: wgpu::Buffer,
     uniform_buf: wgpu::Buffer,
     texture: wgpu::Texture,
-    texture_view: wgpu::TextureView,
-    sampler: wgpu::Sampler,
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
+    texture_cur_x: u32,
+    texture_cur_y: u32,
+    texture_cur_max_height: u32,
 }
 
 const MAX_N_VERTICES: usize = 100000;
@@ -30,7 +40,7 @@ const TEXTURE_SIZE: u32 = 1000;
 
 impl Graphics {
     pub fn init(config: &wgpu::SurfaceConfiguration,
-                device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+                device: &wgpu::Device, _queue: &wgpu::Queue) -> Self {
         let vertices = [Vertex {
             pos: [0.0, 0.0],
             uv: [0.0, 0.0],
@@ -181,19 +191,22 @@ impl Graphics {
         Self {
             width: 0.0,
             height: 0.0,
-            n_indices: 0,
+            indices: vec![],
+            vertices: vec![],
+            n_committed_indices: 0,
             vertex_buf,
             index_buf,
             uniform_buf,
             texture,
-            texture_view,
-            sampler,
             bind_group,
             pipeline,
+            texture_cur_x: 0,
+            texture_cur_y: 0,
+            texture_cur_max_height: 0,
         }
     }
 
-    pub fn resize(&mut self, width: f32, height: f32, device: &wgpu::Device,
+    pub fn resize(&mut self, width: f32, height: f32, _device: &wgpu::Device,
                   queue: &wgpu::Queue) {
         self.width = width;
         self.height = height;
@@ -201,17 +214,64 @@ impl Graphics {
         queue.write_buffer(&self.uniform_buf, 0, bytemuck::cast_slice(&size));
     }
 
-    pub fn geometry(&mut self, queue: &wgpu::Queue, vertices: &[Vertex],
-                        indices: &[u16]) {
-        self.n_indices = indices.len() as u32;
-        queue.write_buffer(&self.vertex_buf, 0, bytemuck::cast_slice(&vertices));
-        // indices must have len multiple of 2
-        if indices.len() % 2 == 0 {
-            queue.write_buffer(&self.index_buf, 0, bytemuck::cast_slice(&indices));
-        } else {
-            let mut indices_pad = indices.to_vec().clone();
-            indices_pad.push(0);
-            queue.write_buffer(&self.index_buf, 0, bytemuck::cast_slice(&indices_pad));
+    pub fn add_geom(&mut self, vertices: &[Vertex], indices: &[u16]) {
+        self.vertices.append(&mut vertices.to_vec());
+        self.indices.append(&mut indices.iter().map(|&idx| {
+            idx + self.indices.len() as u16
+        }).collect::<Vec<_>>().to_vec());
+        self.n_committed_indices = self.indices.len() as u32;
+    }
+
+    pub fn commit_geom(&mut self, queue: &wgpu::Queue) {
+        queue.write_buffer(&self.vertex_buf, 0, bytemuck::cast_slice(&self.vertices));
+        // wgpu: indices len must be multiple of 2
+        if self.indices.len() % 2 == 1 {
+            self.indices.push(0);
+        }
+        queue.write_buffer(&self.index_buf, 0, bytemuck::cast_slice(&self.indices));
+        self.vertices.clear();
+        self.indices.clear();
+    }
+
+    pub fn add_texture(&mut self, data: &[u8], width: u32, height: u32,
+                       queue: &wgpu::Queue) -> Rect {
+        if self.texture_cur_x + width >= TEXTURE_SIZE {
+            self.texture_cur_x = 0;
+            self.texture_cur_y += self.texture_cur_max_height;
+            self.texture_cur_max_height = 0;
+        }
+        if self.texture_cur_y + height >= TEXTURE_SIZE {
+            eprintln!("out of texture space");
+        }
+        let dst_x = self.texture_cur_x;
+        let dst_y = self.texture_cur_y;
+
+        self.texture_cur_x += width;
+        self.texture_cur_max_height = self.texture_cur_max_height.max(height);
+
+        queue.write_texture(wgpu::ImageCopyTexture {
+            texture: &self.texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d {
+                x: dst_x,
+                y: dst_y,
+                z: 0,
+            },
+            aspect: wgpu::TextureAspect::All,
+        }, data, wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(width * 4),
+            rows_per_image: None,
+        }, wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        });
+        Rect {
+            x1: dst_x as f32 / TEXTURE_SIZE as f32,
+            y1: dst_y as f32 / TEXTURE_SIZE as f32,
+            x2: (dst_x + width) as f32 / TEXTURE_SIZE as f32,
+            y2: (dst_y + height) as f32 / TEXTURE_SIZE as f32,
         }
     }
 
@@ -237,11 +297,11 @@ impl Graphics {
                 occlusion_query_set: None,
             });
             rpass.set_pipeline(&self.pipeline);
-            if self.n_indices > 0 {
+            if self.n_committed_indices > 0 {
                 rpass.set_bind_group(0, &self.bind_group, &[]);
                 rpass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint16);
                 rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
-                rpass.draw_indexed(0..self.n_indices, 0, 0..1);
+                rpass.draw_indexed(0..self.n_committed_indices, 0, 0..1);
             }
         }
         queue.submit(Some(encoder.finish()));
