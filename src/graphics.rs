@@ -1,3 +1,11 @@
+use serde::Deserialize;
+use std::collections::HashMap;
+use fontdue::{Font, FontSettings};
+use fontdue::layout::{Layout, CoordinateSystem, TextStyle, GlyphRasterConfig};
+use lyon::path::{Path, Winding};
+use lyon::tessellation::*;
+use lyon::math::point;
+use lyon::geom::euclid::{Box2D, Point2D};
 use bytemuck::{Pod, Zeroable};
 use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;
@@ -26,7 +34,7 @@ impl Rect {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
@@ -61,6 +69,8 @@ pub struct Graphics {
     texture_cur_x: u32,
     texture_cur_y: u32,
     texture_cur_max_height: u32,
+    font: Font,
+    font_atlas: HashMap<GlyphRasterConfig, Rect>,
 }
 
 const MAX_N_VERTICES: usize = 100000;
@@ -202,7 +212,7 @@ impl Graphics {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -228,6 +238,10 @@ impl Graphics {
             label: None,
         });
 
+        let font = Font::from_bytes(
+            include_bytes!("../resources/WorkSans-Light.ttf") as &[u8],
+            FontSettings::default()).unwrap();
+
         Self {
             width: 0.0,
             height: 0.0,
@@ -247,6 +261,8 @@ impl Graphics {
             texture_cur_x: 0,
             texture_cur_y: 0,
             texture_cur_max_height: 0,
+            font,
+            font_atlas: HashMap::new()
         }
     }
 
@@ -352,5 +368,128 @@ impl Graphics {
             }
         }
         self.queue.submit(Some(encoder.finish()));
+    }
+
+    pub fn draw_path(&mut self, path: Path, color: &Color) {
+        let mut geometry: VertexBuffers<Vertex, u16> = VertexBuffers::new();
+        let mut tessellator = StrokeTessellator::new();
+        let color_v = [color.r, color.g, color.b, color.a];
+        {
+            tessellator.tessellate_path(
+                &path,
+                &StrokeOptions::default(),
+                &mut BuffersBuilder::new(&mut geometry, |vertex: StrokeVertex| {
+                    Vertex {
+                        pos: vertex.position().to_array(),
+                        uv: [0.0, 0.0],
+                        color: color_v,
+                    }
+                }),
+            ).unwrap();
+        }
+        self.add_geom(&geometry.vertices, &geometry.indices);
+    }
+
+    pub fn fill_path(&mut self, path: Path, color: &Color) {
+        let mut geometry: VertexBuffers<Vertex, u16> = VertexBuffers::new();
+        let mut tessellator = FillTessellator::new();
+        let color_v = [color.r, color.g, color.b, color.a];
+        {
+            tessellator.tessellate_path(
+                &path,
+                &FillOptions::default(),
+                &mut BuffersBuilder::new(&mut geometry, |vertex: FillVertex| {
+                    Vertex {
+                        pos: vertex.position().to_array(),
+                        uv: [0.0, 0.0],
+                        color: color_v,
+                    }
+                }),
+            ).unwrap();
+        }
+        self.add_geom(&geometry.vertices, &geometry.indices);
+    }
+
+    pub fn fill_rect(&mut self, x1: f32, y1: f32, x2: f32, y2: f32,
+                     color: &Color) {
+        let color_v = [color.r, color.g, color.b, color.a];
+        let vertices = [
+            Vertex { pos: [x1, y1], uv: [0.0, 0.0], color: color_v },
+            Vertex { pos: [x1, y2], uv: [0.0, 0.0], color: color_v },
+            Vertex { pos: [x2, y2], uv: [0.0, 0.0], color: color_v },
+            Vertex { pos: [x2, y1], uv: [0.0, 0.0], color: color_v },
+        ];
+        let indices = [0u16, 1, 2, 0, 2, 3];
+        self.add_geom(&vertices, &indices);
+    }
+
+    pub fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32,
+                     color: &Color) {
+        let mut builder = Path::builder();
+        builder.begin(point(x1, y1));
+        builder.line_to(point(x2, y2));
+        builder.close();
+        let path = builder.build();
+        self.draw_path(path, color);
+    }
+
+    pub fn draw_rect(&mut self, x1: f32, y1: f32, x2: f32, y2: f32,
+                     color: &Color) {
+        let mut builder = Path::builder();
+        builder.add_rectangle(
+            &Box2D::new(Point2D::new(x1, y1), Point2D::new(x2, y2)),
+            Winding::Positive,
+        );
+        let path = builder.build();
+        self.draw_path(path, color);
+    }
+
+    pub fn draw_text(&mut self, text: &str, size: f32, x: f32, y: f32, color: &Color) {
+        let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
+        layout.append(&[&self.font], &TextStyle::new(text, size * self.scale, 0));
+        for glyph in layout.glyphs() {
+            if !self.font_atlas.contains_key(&glyph.key) {
+                let (metrics, bitmap) = self.font.rasterize(glyph.parent, size * self.scale);
+                let mut tex: Vec<u8> = vec![];
+                for &v in &bitmap {
+                    tex.push(0xff);
+                    tex.push(0xff);
+                    tex.push(0xff);
+                    tex.push(v);
+                }
+                let rect = self.add_texture(&tex, metrics.width as u32, metrics.height as u32);
+                self.font_atlas.insert(glyph.key, rect);
+            }
+            let uv_rect = &self.font_atlas[&glyph.key];
+            let color_v = [color.r, color.g, color.b, color.a];
+            let vertices = [
+                Vertex {
+                    pos: [x + glyph.x/self.scale, y + glyph.y/self.scale],
+                    uv: [uv_rect.x1, uv_rect.y1],
+                    color: color_v
+                },
+                Vertex {
+                    pos: [x + glyph.x/self.scale, y +
+                        (glyph.y+glyph.height as f32)/self.scale],
+                    uv: [uv_rect.x1, uv_rect.y2],
+                    color: color_v
+                },
+                Vertex {
+                    pos: [
+                        x + (glyph.x+glyph.width as f32)/self.scale,
+                        y + (glyph.y+glyph.height as f32)/self.scale,
+                    ],
+                    uv: [uv_rect.x2, uv_rect.y2],
+                    color: color_v
+                },
+                Vertex {
+                    pos: [x + (glyph.x+glyph.width as f32)/self.scale, y + glyph.y/self.scale],
+                    uv: [uv_rect.x2, uv_rect.y1],
+                    color: color_v
+                },
+            ];
+            let indices = [0u16, 1, 2, 0, 2, 3];
+            self.add_geom(&vertices, &indices);
+        }
     }
 }

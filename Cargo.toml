@@ -11,5 +11,7 @@ cosmic-text = "0.10.0"
 fontdue = "0.7.3"
 lyon = "1.0.1"
 pollster = "0.3.0"
+serde = { version = "1.0.193", features = ["derive"] }
+toml = "0.8.8"
 wgpu = { git = "https://github.com/gfx-rs/wgpu" }
 winit = "0.29.3"
