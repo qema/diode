@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 use fontdue::{Font, FontSettings};
-use fontdue::layout::{Layout, CoordinateSystem, TextStyle, GlyphRasterConfig};
+use fontdue::layout::{Layout, LayoutSettings, CoordinateSystem, TextStyle, GlyphRasterConfig};
 use lyon::path::{Path, Winding};
 use lyon::tessellation::*;
 use lyon::math::point;
@@ -440,10 +440,40 @@ impl Graphics {
         self.draw_path(path, color);
     }
 
-    pub fn draw_text(&mut self, text: &str, size: f32, x: f32, y: f32, color: &Color) {
+    pub fn draw_fitted_text_line(&mut self, text: &str, size: f32, x: f32, y: f32,
+                                 max_width: f32, color: &Color) {
         let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
         layout.append(&[&self.font], &TextStyle::new(text, size * self.scale, 0));
+        let mut fitted_text = String::new();
         for glyph in layout.glyphs() {
+            if (glyph.x + glyph.width as f32) >= max_width * self.scale {
+                for _ in 0..3.min(fitted_text.len()) {
+                    fitted_text.pop();
+                }
+                fitted_text.push_str("...");
+                break;
+            }
+            fitted_text.push(glyph.parent);
+        }
+        self.draw_text(&fitted_text, size, x, y, None, None, color);
+    }
+
+    pub fn draw_text(&mut self, text: &str, size: f32, x: f32, y: f32,
+                     max_width: Option<f32>, max_height: Option<f32>, color: &Color) {
+        let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
+        layout.reset(&LayoutSettings {
+            max_width: if let Some(w) = max_width { Some(w * self.scale) } else { None },
+            max_height: if let Some(h) = max_height { Some(h * self.scale) } else { None },
+            ..Default::default()
+        });
+        layout.append(&[&self.font], &TextStyle::new(text, size * self.scale, 0));
+
+        for glyph in layout.glyphs() {
+            if let Some(h) = max_height {
+                if (glyph.y + glyph.height as f32) / self.scale >= h {
+                    break;
+                }
+            }
             if !self.font_atlas.contains_key(&glyph.key) {
                 let (metrics, bitmap) = self.font.rasterize(glyph.parent, size * self.scale);
                 let mut tex: Vec<u8> = vec![];
