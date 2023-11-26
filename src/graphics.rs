@@ -55,7 +55,7 @@ pub struct Graphics {
     pub height: f32,
     pub scale: f32,
     vertices: Vec<Vertex>,
-    indices: Vec<u16>,
+    indices: Vec<u32>,
     n_committed_indices: u32,
     pub config: wgpu::SurfaceConfiguration,
     pub device: wgpu::Device,
@@ -90,7 +90,7 @@ impl Graphics {
             contents: bytemuck::cast_slice(&vertices),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
-        let indices = [0u16; MAX_N_INDICES];
+        let indices = [0u32; MAX_N_INDICES];
         let index_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(&indices),
@@ -278,9 +278,9 @@ impl Graphics {
         self.queue.write_buffer(&self.uniform_buf, 0, bytemuck::cast_slice(&size));
     }
 
-    pub fn add_geom(&mut self, vertices: &[Vertex], indices: &[u16]) {
+    pub fn add_geom(&mut self, vertices: &[Vertex], indices: &[u32]) {
         self.indices.append(&mut indices.iter().map(|&idx| {
-            idx + self.vertices.len() as u16
+            idx + self.vertices.len() as u32
         }).collect::<Vec<_>>().to_vec());
         self.vertices.append(&mut vertices.to_vec());
         self.n_committed_indices = self.indices.len() as u32;
@@ -288,10 +288,6 @@ impl Graphics {
 
     pub fn commit_geom(&mut self) {
         self.queue.write_buffer(&self.vertex_buf, 0, bytemuck::cast_slice(&self.vertices));
-        // wgpu: indices len must be multiple of 2
-        if self.indices.len() % 2 == 1 {
-            self.indices.push(0);
-        }
         self.queue.write_buffer(&self.index_buf, 0, bytemuck::cast_slice(&self.indices));
         self.vertices.clear();
         self.indices.clear();
@@ -362,7 +358,7 @@ impl Graphics {
             rpass.set_pipeline(&self.pipeline);
             if self.n_committed_indices > 0 {
                 rpass.set_bind_group(0, &self.bind_group, &[]);
-                rpass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint16);
+                rpass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint32);
                 rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
                 rpass.draw_indexed(0..self.n_committed_indices, 0, 0..1);
             }
@@ -371,7 +367,7 @@ impl Graphics {
     }
 
     pub fn draw_path(&mut self, path: Path, color: &Color) {
-        let mut geometry: VertexBuffers<Vertex, u16> = VertexBuffers::new();
+        let mut geometry: VertexBuffers<Vertex, u32> = VertexBuffers::new();
         let mut tessellator = StrokeTessellator::new();
         let color_v = [color.r, color.g, color.b, color.a];
         {
@@ -391,7 +387,7 @@ impl Graphics {
     }
 
     pub fn fill_path(&mut self, path: Path, color: &Color) {
-        let mut geometry: VertexBuffers<Vertex, u16> = VertexBuffers::new();
+        let mut geometry: VertexBuffers<Vertex, u32> = VertexBuffers::new();
         let mut tessellator = FillTessellator::new();
         let color_v = [color.r, color.g, color.b, color.a];
         {
@@ -419,7 +415,7 @@ impl Graphics {
             Vertex { pos: [x2, y2], uv: [0.0, 0.0], color: color_v },
             Vertex { pos: [x2, y1], uv: [0.0, 0.0], color: color_v },
         ];
-        let indices = [0u16, 1, 2, 0, 2, 3];
+        let indices = [0u32, 1, 2, 0, 2, 3];
         self.add_geom(&vertices, &indices);
     }
 
@@ -488,7 +484,7 @@ impl Graphics {
                     color: color_v
                 },
             ];
-            let indices = [0u16, 1, 2, 0, 2, 3];
+            let indices = [0u32, 1, 2, 0, 2, 3];
             self.add_geom(&vertices, &indices);
         }
     }
