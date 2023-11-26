@@ -21,6 +21,9 @@ impl Rect {
     pub fn new(x1: f32, y1: f32, x2: f32, y2: f32) -> Self {
         Self { x1, y1, x2, y2 }
     }
+    pub fn zero() -> Self {
+        Self { x1: 0.0, y1: 0.0, x2: 0.0, y2: 0.0 }
+    }
 }
 
 #[derive(Debug)]

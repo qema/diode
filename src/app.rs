@@ -1,19 +1,27 @@
-use crate::context::*;
-use crate::renderer::*;
 use crate::graphics::*;
+use crate::renderer::*;
+use crate::ui::*;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::EventLoop,
     window::Window,
+    dpi::LogicalSize,
 };
 
-pub trait App {
-    fn update(&mut self, ctx: &mut Context);
+pub struct Context {
+    pub gfx: Graphics,
+    pub renderer: Renderer,
+}
+
+pub struct AppConfig {
+    pub title: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 async fn run_async<F>(
     event_loop: EventLoop<()>, window: &Window, mut update_fn: F)
-    where F: FnMut(&mut Context) {
+    where F: FnMut(&mut Context, &mut UI) {
     let mut size = window.inner_size();
     size.width = size.width.max(1);
     size.height = size.height.max(1);
@@ -47,6 +55,7 @@ async fn run_async<F>(
         gfx: Graphics::init(config, device, queue),
         renderer: Renderer::new(),
     };
+    let mut ui = UI::new();
     ctx.gfx.resize(ctx.gfx.config.width, ctx.gfx.config.height,
                    window.scale_factor() as f32);
 
@@ -55,6 +64,7 @@ async fn run_async<F>(
 
     event_loop.run(move |event, target| {
         let _ = (&instance, &adapter);
+
         if let Event::WindowEvent { window_id: _, event } = event {
             match event {
                 WindowEvent::Resized(new_size) => {
@@ -68,7 +78,10 @@ async fn run_async<F>(
                     let frame = surface.get_current_texture().unwrap();
                     let view = frame.texture.create_view(
                         &wgpu::TextureViewDescriptor::default());
-                    update_fn(&mut ctx);
+
+                    update_fn(&mut ctx, &mut ui);
+
+                    ui.redraw(&mut ctx);
 
                     ctx.gfx.commit_geom();
                     ctx.gfx.render(&view);
@@ -81,8 +94,11 @@ async fn run_async<F>(
     }).unwrap();
 }
 
-pub fn run<F>(update_fn: F) where F: FnMut(&mut Context) {
+pub fn run<F>(config: AppConfig, update_fn: F)
+    where F: FnMut(&mut Context, &mut UI) {
     let event_loop = EventLoop::new().unwrap();
     let window = Window::new(&event_loop).unwrap();
+    window.set_title(&config.title);
+    let _ = window.request_inner_size(LogicalSize::new(config.width, config.height));
     pollster::block_on(run_async(event_loop, &window, update_fn));
 }

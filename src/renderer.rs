@@ -2,8 +2,10 @@ use crate::graphics::*;
 use std::collections::HashMap;
 use fontdue::{Font, FontSettings};
 use fontdue::layout::{Layout, CoordinateSystem, TextStyle, GlyphRasterConfig};
-use lyon::path::Path;
+use lyon::path::{Path, Winding};
 use lyon::tessellation::*;
+use lyon::math::point;
+use lyon::geom::euclid::{Box2D, Point2D};
 
 pub struct Renderer {
     font: Font,
@@ -21,7 +23,7 @@ impl Renderer {
         }
     }
 
-    pub fn stroke_path(&mut self, gfx: &mut Graphics, path: Path, color: &Color) {
+    pub fn draw_path(&mut self, gfx: &mut Graphics, path: Path, color: &Color) {
         let mut geometry: VertexBuffers<Vertex, u16> = VertexBuffers::new();
         let mut tessellator = StrokeTessellator::new();
         let color_v = [color.r, color.g, color.b, color.a];
@@ -72,6 +74,27 @@ impl Renderer {
         ];
         let indices = [0u16, 1, 2, 0, 2, 3];
         gfx.add_geom(&vertices, &indices);
+    }
+
+    pub fn draw_line(&mut self, gfx: &mut Graphics, x1: f32, y1: f32, x2: f32, y2: f32,
+                     color: &Color) {
+        let mut builder = Path::builder();
+        builder.begin(point(x1, y1));
+        builder.line_to(point(x2, y2));
+        builder.close();
+        let path = builder.build();
+        self.draw_path(gfx, path, color);
+    }
+
+    pub fn draw_rect(&mut self, gfx: &mut Graphics, x1: f32, y1: f32, x2: f32, y2: f32,
+                     color: &Color) {
+        let mut builder = Path::builder();
+        builder.add_rectangle(
+            &Box2D::new(Point2D::new(x1, y1), Point2D::new(x2, y2)),
+            Winding::Positive,
+        );
+        let path = builder.build();
+        self.draw_path(gfx, path, color);
     }
 
     pub fn draw_text(&mut self, gfx: &mut Graphics, text: &str, size: f32, x: f32, y: f32,
