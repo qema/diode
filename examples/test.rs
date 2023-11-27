@@ -17,12 +17,13 @@ impl App for TestApp {
                           &Color::rgba(1.0, 1.0, 1.0, 0.1));
         ctx.gfx.fill_rect(120.0, 120.0, 400.0, 400.0,
                           &Color::rgba(0.0, 1.0, 0.0, 0.5));
-        /*
+        
         for i in 0..100 {
-            ctx.gfx.draw_text("hello world", 40.0, 100.0, 100.0 + i as f32, 1000.0,
+            ctx.gfx.draw_text("hello world", 40.0, 100.0, 100.0 + i as f32,
+                              None, None,
                               &Color::rgb(i as f32 / 100.0, 0.0, 1.0));
         }
-        */
+        
         let mut builder = Path::builder();
         builder.begin(point(100.0, 100.0));
         builder.line_to(point(200.0, 200.0));
